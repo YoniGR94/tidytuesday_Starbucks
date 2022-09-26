@@ -185,9 +185,11 @@ rmse_vec(star_train_te$calories, pred_price_cat)
 
 cbind(star_train_te, pred_price_cat) %>%
   as.data.frame() %>%
-  ggplot(aes(x=calories, y= calories-pred_price_cat, shape= txt_tea, color= txt_frappuccino, size= txt_creme))+
-  geom_point()
-
+  
+  #ggplot(aes(x=calories, y= calories-pred_price_cat, shape= txt_tea, color= txt_frappuccino, size= txt_creme))+
+  #geom_point()
+  ggplot(aes(x=calories, y= calories-pred_price_cat))+
+  geom_violin()+facet_wrap(~txt_tea+txt_frappuccino+txt_creme)
 ```
 We managed to slightly reduce the rmse, but not enough for a diet calculator.
 
@@ -235,6 +237,8 @@ Only then we will see th result by cafe_test prediction RMS
   #write_csv("model01.csv")
 ```
 
+#### use parnship
+
 ```{r}
 
 dolche_de_leche<- function(df)
@@ -260,14 +264,13 @@ cv_splits <- vfold_cv(star_train_tr, v = 5) #for RF
 
 cv_splits_star_train$bake_em_coffe <- map(
   cv_splits_star_train$splits, prepper, recipe = bake_em_coffe)
-#???
 
 data_full<-      dolche_de_leche(cafe_train) %>% prep(cafe_train) %>% bake(new_data= cafe_train)
 data_test<- dolche_de_leche(cafe_train) %>% prep(cafe_train) %>% bake(new_data= cafe_test)
 
 ```
 
-
+### tune glmnet
 
 ```{r lr with punishment}
 YG_model_1 <- linear_reg(penalty = 0.001, mixture = .5 ) %>%
@@ -340,23 +343,21 @@ mod_glmnet_final %>%
 
 mod_glmnet_final %>% 
   predict(new_data = data_test) %>%   cbind(cafe_test$product_name) %>%
-   rename(calories= 1) #%>% write_csv("true_model_glmnet_3fixe_pred_Yoni.csv")
-
-#___#  
+   rename(calories= 1)# %>% write_csv("true_model_glmnet_3fixe_pred_Yoni.csv")
 
 ```
 
-
+#### random forest
 
 ```{r random forest}
 
 YG_model_2 <- rand_forest(mode = "regression",
                            mtry = tune(), min_n = tune(),
-                          trees = 80) %>%
+                          trees = 100) %>%
   set_engine("ranger")
 
 
-rf_grid <- grid_regular(mtry(range(15, 40)), min_n(range(10,30)), levels = c(4, 3))
+rf_grid <- grid_regular(mtry(range(4, 23)), min_n(range(10,30)), levels = c(4, 3))
 
 
 tune_res <- tune_grid(YG_model_2,
@@ -379,13 +380,14 @@ mod_rf_final <- finalize_model(YG_model_2, best_rmse)
 
 ##try to bake at last
 #____#
-test_baked<- dolche_de_leche(shoes_train_YG) %>% prep(shoes_train_YG) %>% bake(shoes_test_YG) 
+#???
+test_baked<- dolche_de_leche(data_full) %>% prep(data_full) %>% bake(data_test) 
 
 mod_rf_final$mod_fit_bake <- mod_rf_final %>%
-  fit(calories ~ ., data = rf_full)# %>%
+  fit(calories ~ ., data = data_full)# %>%
 
 mod_rf_final$mod_fit_bake %>% 
-  predict(new_data = test_baked) #%>%
+  predict(new_data = data_test) #%>%
 
 
 #___#  
@@ -396,9 +398,9 @@ YG_model_2_tuned<- YG_model_2 <- rand_forest(mode = "regression",
 
 
 YG_model_2_tuned_fit<-
-  YG_model_2_tuned %>%  fit_xy(x = bake_em_coffe$template[,-30],
+  YG_model_2_tuned %>%  fit_xy(x = bake_em_coffe$template[,-25],
                              y= bake_em_coffe$template$calories) 
-
+#???
 YG_model_2_tuned_pred<- YG_model_2_tuned_fit %>% predict(new_data = test_baked$template)
 
 
@@ -414,6 +416,7 @@ dim(test_baked$template)
 
 
 ```
+#### preduction of random forest
 
 ```{r rf full to send}
 
@@ -469,9 +472,9 @@ Now I will add hash to the recipe and try again
 dolche_de_leche_hash<- function(df)
   {
   recipe(data=  df,calories~.) %>% 
-  update_role(id, new_role = "id") %>% ## ADD THIS
-  textrecipes::step_tokenize(seller_notes) %>%                                        #added hash
-  textrecipes::step_texthash(seller_notes, signed = TRUE, num_terms = 12) %>%       #added hash
+  update_role(product_name, new_role = "id") %>% ## ADD THIS
+  textrecipes::step_tokenize(product_name) %>%                                        #added hash
+  textrecipes::step_texthash(product_name, signed = TRUE, num_terms = 12) %>%       #added hash
   update_role (starts_with("clr"),starts_with('texthash'),starts_with('selleler_notes'),new_role = "discard" )%>% 
   step_novel  (all_nominal(), -all_outcomes(), new_level = "the_rest")%>% 
   step_unknown(all_nominal(), new_level= "step_unknown" )%>%
@@ -488,8 +491,8 @@ test_baked_hash<-     shoes_train_te %>% dolche_de_leche_hash()
 cv_splits_star_train$bake_em_hash_to_eat <- map(
   cv_splits_star_train$splits, prepper, recipe = bake_em_hash_to_eat)
 
-rf_full_hash<-      dolche_de_leche_hash(shoes_train_YG) %>% prep(shoes_train_YG) %>% bake(new_data= shoes_train_YG)
-rf_full_test_hash<- dolche_de_leche_hash(shoes_train_YG) %>% prep(shoes_train_YG) %>% bake(new_data= shoes_test_YG)
+cafe_full_hash<-      dolche_de_leche_hash(shoes_train_YG) %>% prep(shoes_train_YG) %>% bake(new_data= shoes_train_YG)
+cafe_full_test_hash<- dolche_de_leche_hash(shoes_train_YG) %>% prep(shoes_train_YG) %>% bake(new_data= shoes_test_YG)
 ```
 
 
@@ -534,13 +537,13 @@ RMSE_08
 #____#
 
 mod_glmnet_final <- YG_model_1_hasher %>%
-  fit(calories ~ ., data = rf_full_hash)# %>%
+  fit(calories ~ ., data = cafe_full_hash)# %>%
 
 mod_glmnet_final %>% 
-  predict(new_data = rf_full_test_hash)
+  predict(new_data = cafe_full_test_hash)
 
 mod_glmnet_final %>% 
-  predict(new_data = rf_full_test_hash) %>% 
+  predict(new_data = cafe_full_test_hash) %>% 
   cbind(rf_full_test$id) %>%
    rename(id= 'rf_full_test$id') %>% 
   write_csv("YoniG_glhsh.csv")
@@ -585,6 +588,9 @@ RF_hash_baked<- dolche_de_leche_hash(shoes_train_YG) %>% prep(shoes_train_YG) %>
 
 ```
 
+
+### tuned random forest
+
 ```{r hash RF tuned}
 
 
@@ -598,17 +604,17 @@ true_model_rf_hash <- rand_forest(mode = "regression",
                           trees = 800) %>% set_engine("ranger")
 
 true_model_rf_hash_set<- true_model_rf_hash %>% 
-  fit_xy(x = rf_full_hash[,-(which(colnames(rf_full_hash)== 'calories'))],
-         y= rf_full_hash$calories)
+  fit_xy(x = cafe_full_hash[,-(which(colnames(cafe_full_hash)== 'calories'))],
+         y= cafe_full_hash$calories)
 
 mod_rfhash_final <- finalize_model(true_model_rf_hash, best_rmse_RF_hash)
 #library(text2vec)
 detach("package:text2vec", unload = T)                       # Detach stringr packagetext
 true_model_rf_hash$mod_RFhash_bake <- true_model_rf_hash %>%
-  fit(calories ~ ., data = rf_full_hash) #%>%
+  fit(calories ~ ., data = cafe_full_hash) #%>%
 
 true_model_rf_hash_to_csv<-  
-  predict(true_model_rf_hash_set ,new_data = rf_full_test_hash) #%>%
+  predict(true_model_rf_hash_set ,new_data = cafe_full_test_hash) #%>%
 
 
 true_model_rf_hash_to_csv %>%
@@ -618,3 +624,6 @@ true_model_rf_hash_to_csv %>%
 
   
 ```
+
+
+### keras
