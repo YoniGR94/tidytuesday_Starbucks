@@ -9,12 +9,9 @@ output:
 subtitle: The Price is Right!
 ---
 
-<p><strong>still in progress.</strong></p>
+**Still in progress.**
 
-
-In this project, we are going to experience prediction in real life, with true unknown data. this data is the [Starbucks drink menu dataset](https://github.com/rfordatascience/tidytuesday/tree/master/data/2021/2021-12-21),
-from the [tidytuesday](https://github.com/rfordatascience/tidytuesday) project. This data was published in 21/12/2021.
-
+In this project, we are going to experience prediction in real life, with true unknown data. this data is the [Starbucks drink menu dataset](https://github.com/rfordatascience/tidytuesday/tree/master/data/2021/2021-12-21), from the [tidytuesday](https://github.com/rfordatascience/tidytuesday) project. This data was published in 21/12/2021.
 
 ```{r library, message=FALSE, warning=FALSE}
 library(tidyverse)
@@ -30,7 +27,8 @@ tuesdata <- tidytuesdayR::tt_load(2021, week = 52)
 starbucks <- tuesdata$starbucks
 
 ```
-This is going to be a blind test, so I won't have any clue about the calories in the test dataset. 
+
+This is going to be a blind test, so I won't have any clue about the calories in the test dataset.
 
 ```{r 1st split}
 set.seed(42)
@@ -54,7 +52,8 @@ detector<- function(df)
 {
   df<- df %>%  
     mutate(
-      product_name = stringi::stri_trans_general(product_name, id = "Latin-ASCII") %>% str_to_lower())
+      product_name = stringi::stri_trans_general(product_name, id = "Latin-ASCII") %>% str_to_lower(),
+    milk = as.factor(milk))
   most_cmmon<- df %>% 
     select(product_name) %>% 
     str_replace_all('[:punct:]', " ") %>%
@@ -64,6 +63,17 @@ detector<- function(df)
   print(most_cmmon[1:10])
   most_cmmon[1:10] %>% names() %>% unlist()
 }
+
+#cafe_train$milk %>% 
+#map_chr(cafe_train$milk,
+#        ~case_when(
+#    .x== 0 ~ "none",
+#    .x== 1 ~ "nonfat",
+#    .x== 2 ~ "fat_",
+#    .x== 3 ~ "soy",
+#    .x== 4 ~ "coconut",
+#    .x== 5 ~ "whole", TRUE ~ NA_real_))
+
 ```
 
 Now we will see the most common words, after cleaning:
@@ -91,14 +101,13 @@ cafe_test<-  text_fun(cafe_test , common_10)
 
 ```
 
-## Visualization and summarising data
+## Visualization and summarizing data
 
 How many drinks do we have in any size?
 
 ```{r}
 cafe_train %>% count(size, sort = T)
 ```
-
 
 ```{r}
 cafe_train %>% count(trans_fat_g)
@@ -109,6 +118,7 @@ The drinks with highest calories:
 ```{r}
 cafe_train %>% arrange(-calories) %>% slice(1:5) %>% select(product_name, size, calories)
 ```
+
 now by size:
 
 ```{r}
@@ -117,9 +127,7 @@ cafe_train %>% arrange(-calories) %>%
   geom_point(size= 0.8, alpha= 0.8)
 ```
 
-
 The least The drinks with lowest calories:
-
 
 ```{r}
 cafe_train %>% arrange(calories) %>% slice(1:10) %>% select(product_name, size, calories,txt_tea)
@@ -130,7 +138,6 @@ cafe_train %>% arrange(calories) %>% filter(calories== 0) %>% select(product_nam
 ```
 
 As we can see, all non calories drinks are Tea
-
 
 ```{r}
 cafe_train %>% arrange(-calories) %>% 
@@ -166,8 +173,8 @@ rmse_vec(star_train_te$calories, rep(mean_calories, nrow(star_train_te)))
 cbind(star_train_te$calories, rep(mean_calories, nrow(star_train_te))) %>%
   as.data.frame() %>%
   'colnames<-'(c('calories','mean_calories')) %>% 
-  ggplot(aes(x=calories, y= calories-mean_calories))+
-  geom_violin()
+  ggplot(aes(x=calories, y= mean_calories))+
+  geom_violin()+geom_hline(yintercept= mean_calories, size= 1.1, col= "Red")
 ```
 
 If we simply predict the mean of each category...
@@ -191,6 +198,7 @@ cbind(star_train_te, pred_price_cat) %>%
   ggplot(aes(x=calories, y= calories-pred_price_cat))+
   geom_violin()+facet_wrap(~txt_tea+txt_frappuccino+txt_creme)
 ```
+
 We managed to slightly reduce the rmse, but not enough for a diet calculator.
 
 Finally we will see where `NA` exist.
@@ -199,7 +207,7 @@ Finally we will see where `NA` exist.
 naniar::vis_miss(star_train_tr)
 ```
 
-Throwing in interaction between category and condition and is the product sent with free shipping, though almost all coefficients are "significant", doesn't really help RMSE:
+Throwing in interaction between some textgroups, though almost all coefficients are "significant", doesn't really help RMSE:
 
 ```{r}
 mod <- lm(calories ~ ., data = star_train_tr %>% select(-1))
@@ -225,11 +233,9 @@ cbind(star_train_te$calories, pred_lm) %>%
 
 ## Heavy predictions
 
-
 Now after our threshold was build, we will create a sensible model to predict the `calories` of the XXX drinks in `cafe_test`.
 
-Only then we will see th result by cafe_test prediction RMS
-
+Only then we will see the result by cafe_test prediction's RMS
 
 ```{r, eval=FALSE}
 #cafe_test %>%
@@ -245,12 +251,12 @@ dolche_de_leche<- function(df)
   {
   recipe(data=  df,calories~.) %>% 
   update_role(product_name, new_role = "id") %>% ## ADD THIS
-  step_novel  (all_nominal(), -all_outcomes(), new_level = "the_rest")%>% 
-  step_unknown(all_nominal(), new_level= "step_unknown" )%>%
-  step_other  (all_nominal(), other = 'step_other', threshold = 0.004)%>% 
-  step_normalize(all_numeric( ),-has_role("discard"),-has_role("discard"),-all_outcomes()) %>%
-  step_nzv (all_numeric() ,-has_role("discard") ,-all_outcomes(),freq_cut = 99/1) %>% 
-  step_dummy (all_nominal(), one_hot = F)
+  step_novel  (all_nominal(), -has_role('id'), -all_outcomes(), new_level = "the_rest")%>% 
+  step_unknown(all_nominal(), -has_role('id'), new_level= "step_unknown" )%>%
+  step_other  (all_nominal(), -has_role('id'), other = 'step_other', threshold = 0.004)%>% 
+  step_normalize(all_numeric( ), -has_role('id'),-has_role("discard"),-has_role("discard"),-all_outcomes()) %>%
+  step_nzv (all_numeric() , -has_role('id'),-has_role("discard") ,-all_outcomes(),freq_cut = 99/1) %>% 
+  step_dummy (all_nominal(), -has_role('id'), one_hot = F)
   }
 
 bake_em_coffe<-  star_train_tr %>%dolche_de_leche()
@@ -266,7 +272,8 @@ cv_splits_star_train$bake_em_coffe <- map(
   cv_splits_star_train$splits, prepper, recipe = bake_em_coffe)
 
 data_full<-      dolche_de_leche(cafe_train) %>% prep(cafe_train) %>% bake(new_data= cafe_train)
-data_test<- dolche_de_leche(cafe_train) %>% prep(cafe_train) %>% bake(new_data= cafe_test)
+data_full_test<- dolche_de_leche(cafe_train) %>% prep(cafe_train) %>% bake(new_data= cafe_test)
+
 
 ```
 
@@ -329,9 +336,11 @@ for (i in 1:10)
 }
 
 mean(RMSE)
-RMSE
+round(RMSE,2)
+```
 
-##try to bake at last
+
+```{r try to bake at last}
 #____#
 test_baked<- dolche_de_leche(cafe_train) %>% prep(cafe_train) %>% bake(cafe_test) 
 
@@ -339,11 +348,11 @@ mod_glmnet_final <- YG_model_1 %>%
   fit(calories ~ ., data = data_full)# %>%
 
 mod_glmnet_final %>% 
-  predict(new_data = data_test)
+  predict(new_data = data_full_test)
 
 mod_glmnet_final %>% 
-  predict(new_data = data_test) %>%   cbind(cafe_test$product_name) %>%
-   rename(calories= 1)# %>% write_csv("true_model_glmnet_3fixe_pred_Yoni.csv")
+  predict(new_data = data_full_test) %>%   cbind(cafe_test$product_name) %>%
+   rename(calories.pred= 1)# %>% write_csv("true_model_glmnet_3fixe_pred_Yoni.csv")
 
 ```
 
@@ -357,7 +366,7 @@ YG_model_2 <- rand_forest(mode = "regression",
   set_engine("ranger")
 
 
-rf_grid <- grid_regular(mtry(range(4, 23)), min_n(range(10,30)), levels = c(4, 3))
+rf_grid <- grid_regular(mtry(range(4, 23)), min_n(range(5,30)), levels = c(4, 3))
 
 
 tune_res <- tune_grid(YG_model_2,
@@ -381,13 +390,14 @@ mod_rf_final <- finalize_model(YG_model_2, best_rmse)
 ##try to bake at last
 #____#
 #???
-test_baked<- dolche_de_leche(data_full) %>% prep(data_full) %>% bake(data_test) 
+
+#test_baked<- dolche_de_leche(data_full) %>% prep(data_full) %>% bake(data_full_test) 
 
 mod_rf_final$mod_fit_bake <- mod_rf_final %>%
   fit(calories ~ ., data = data_full)# %>%
 
 mod_rf_final$mod_fit_bake %>% 
-  predict(new_data = data_test) #%>%
+  predict(new_data = data_full_test) #%>%
 
 
 #___#  
@@ -398,10 +408,11 @@ YG_model_2_tuned<- YG_model_2 <- rand_forest(mode = "regression",
 
 
 YG_model_2_tuned_fit<-
-  YG_model_2_tuned %>%  fit_xy(x = bake_em_coffe$template[,-25],
+  YG_model_2_tuned %>%  fit_xy(x = bake_em_coffe$template[,-c(1,25)],
                              y= bake_em_coffe$template$calories) 
-#???
 YG_model_2_tuned_pred<- YG_model_2_tuned_fit %>% predict(new_data = test_baked$template)
+
+#YG_model_2_tuned_pred<- YG_model_2_tuned_fit %>% predict(new_data = data_full_test)
 
 
 YG_model_2_tuned_pred<- cbind(YG_model_2_tuned_pred,test_baked$template$calories)
@@ -416,6 +427,7 @@ dim(test_baked$template)
 
 
 ```
+
 #### preduction of random forest
 
 ```{r rf full to send}
@@ -428,37 +440,35 @@ true_model_rf <- rand_forest(mode = "regression",
                           trees = 300) %>% set_engine("ranger")
 
 true_model_rf_set<- true_model_rf %>% 
-  fit_xy(x = rf_full[,-(which(colnames(rf_full)== 'calories'))],
-         y= rf_full$calories)
+  fit_xy(x = data_full[,-(which(colnames(data_full)== 'calories'))],
+         y= data_full$calories)
 
-#true_model_rf_pred<- true_model_rf_set%>% bake(new_data = rf_full_test)
+#true_model_rf_pred<- true_model_rf_set%>% bake(new_data = data_full_test)
 
 mod_rf_final$mod_fit_bake <- mod_rf_final %>%
-  fit(calories ~ ., data = rf_full)# %>%
+  fit(calories ~ ., data = data_full)# %>%
 
 true_model_rf_to_csv<- mod_rf_final$mod_fit_bake %>% 
-  predict(new_data = rf_full_test) #%>%
+  predict(new_data = data_full_test) #%>%
 
 
 true_model_rf_to_csv %>%
-  cbind(rf_full_test$id) %>% 
-  rename(id= 'rf_full_test$id')# %>% 
+  cbind(data_full_test$product_name) %>% 
+  rename(product_name= 'data_full_test$product_name')# %>% 
   #select(id, price_pred) %>%
 #  write_csv("true_model_rf_pred_Yoni.csv")
 
-cbind(colnames(shoes_test_YG), colnames(shoes_train_YG) )
-cbind(sort(colnames(rf_full_test$template)), sort(colnames(rf_full$template)))
+cbind(colnames(data_full_test), colnames(data_full) )
 
 
-cbind(colnames(rf_full_test), colnames(rf_full$template) )
-rf_full_test
+data_full_test
 
 try_full_short<- mod_rf_final %>%
-  fit(calories ~ ., data = shoes_train_tr)# %>%
+  fit(calories ~ ., data = star_train_tr)# %>%
 
 try_full_short %>% 
-predict(new_data = rf_full_test) %>%
-  mutate(truth = shoes_train_te$calories)# %>%
+predict(new_data = star_train_te) %>%
+  mutate(truth = star_train_te$calories)# %>%
   head(10)
 
 ```
@@ -473,28 +483,27 @@ dolche_de_leche_hash<- function(df)
   {
   recipe(data=  df,calories~.) %>% 
   update_role(product_name, new_role = "id") %>% ## ADD THIS
-  textrecipes::step_tokenize(product_name) %>%                                        #added hash
+  textrecipes::step_tokenize(product_name) %>%                                      #added hash
   textrecipes::step_texthash(product_name, signed = TRUE, num_terms = 12) %>%       #added hash
-  update_role (starts_with("clr"),starts_with('texthash'),starts_with('selleler_notes'),new_role = "discard" )%>% 
+  step_rm(product_name) %>% 
+  update_role (starts_with('texthash'),new_role = "discard" )%>% 
   step_novel  (all_nominal(), -all_outcomes(), new_level = "the_rest")%>% 
   step_unknown(all_nominal(), new_level= "step_unknown" )%>%
   step_other  (all_nominal(), other = 'step_other', threshold = 0.004)%>% 
   step_normalize(all_numeric( ),-id,-has_role("discard"),-has_role("discard"),-all_outcomes()) %>%
   step_nzv (all_numeric(),-id ,-has_role("discard") ,-all_outcomes(),freq_cut = 99/1) %>% 
-  step_dummy (all_nominal(),-has_role("discard"), one_hot = F) %>%
-  update_role (starts_with("clr"),old_role =  "discard", new_role= "predictor" )
+  step_dummy (all_nominal(),-has_role("discard"), one_hot = F)
 }
 
-bake_em_hash_to_eat<- shoes_train_tr %>%dolche_de_leche_hash()
-test_baked_hash<-     shoes_train_te %>% dolche_de_leche_hash()
+bake_em_hash_to_eat<- star_train_tr %>%dolche_de_leche_hash()
+test_baked_hash<-     star_train_te %>% dolche_de_leche_hash()
 
 cv_splits_star_train$bake_em_hash_to_eat <- map(
   cv_splits_star_train$splits, prepper, recipe = bake_em_hash_to_eat)
-
-cafe_full_hash<-      dolche_de_leche_hash(shoes_train_YG) %>% prep(shoes_train_YG) %>% bake(new_data= shoes_train_YG)
-cafe_full_test_hash<- dolche_de_leche_hash(shoes_train_YG) %>% prep(shoes_train_YG) %>% bake(new_data= shoes_test_YG)
+#???
+cafe_full_hash<-      dolche_de_leche_hash(cafe_train) %>% prep(cafe_train) %>% bake(new_data= cafe_train)
+cafe_full_test_hash<- dolche_de_leche_hash(cafe_train) %>% prep(cafe_train) %>% bake(new_data= cafe_test)
 ```
-
 
 ```{r 2 hash glmnet}
 
@@ -552,7 +561,6 @@ mod_glmnet_final %>%
 
 ```
 
-
 ```{r hash RF before tune}
 YG_model_RF_hash <- rand_forest(mode = "regression",
                            mtry = tune(), min_n = tune(),
@@ -587,7 +595,6 @@ RF_hash_baked<- dolche_de_leche_hash(shoes_train_YG) %>% prep(shoes_train_YG) %>
 #___#  
 
 ```
-
 
 ### tuned random forest
 
@@ -624,6 +631,5 @@ true_model_rf_hash_to_csv %>%
 
   
 ```
-
 
 ### keras
