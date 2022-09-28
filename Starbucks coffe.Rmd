@@ -24,8 +24,8 @@ all_csvs <- list.files("2022/2021-12-21") |>
   stringr::str_subset(".csv")
 
 tuesdata <- tidytuesdayR::tt_load(2021, week = 52)
-starbucks <- tuesdata$starbucks
-
+starbucks <- tuesdata$starbucks %>%
+  tibble::rowid_to_column("ID")
 ```
 
 This is going to be a blind test, so I won't have any clue about the calories in the test dataset.
@@ -35,7 +35,6 @@ set.seed(42)
 base_split <- initial_split(starbucks, prop = 0.8)
 cafe_train <- training(base_split)
 cafe_test <- testing(base_split)
-
 ```
 
 From now on, I will leave $cafe_test$ and create model based on $cafe_train$
@@ -47,7 +46,6 @@ glimpse(cafe_train)
 In the area of text handling, my strategy was to take the top 10 words. thoose words, like 'creme', 'caffe' can give us some clues in the future prediction.
 
 ```{r}
-
 detector<- function(df)
 {
   df<- df %>%  
@@ -73,7 +71,6 @@ detector<- function(df)
 #    .x== 3 ~ "soy",
 #    .x== 4 ~ "coconut",
 #    .x== 5 ~ "whole", TRUE ~ NA_real_))
-
 ```
 
 Now we will see the most common words, after cleaning:
@@ -93,12 +90,10 @@ text_fun<- function(df, txtr)
   df %>% as.data.frame() #%>% select(-product_name)
 }
 
-
 detector(cafe_train)
 
 cafe_train<- text_fun(cafe_train, common_10)
 cafe_test<-  text_fun(cafe_test , common_10)
-
 ```
 
 ## Visualization and summarizing data
@@ -174,7 +169,7 @@ cbind(star_train_te$calories, rep(mean_calories, nrow(star_train_te))) %>%
   as.data.frame() %>%
   'colnames<-'(c('calories','mean_calories')) %>% 
   ggplot(aes(x=calories, y= mean_calories))+
-  geom_violin()+geom_hline(yintercept= mean_calories, size= 1.1, col= "Red")
+  geom_violin()+geom_hline(yintercept= mean_calories, size= 1, col= "Red")
 ```
 
 If we simply predict the mean of each category...
@@ -210,9 +205,9 @@ naniar::vis_miss(star_train_tr)
 Throwing in interaction between some textgroups, though almost all coefficients are "significant", doesn't really help RMSE:
 
 ```{r}
-mod <- lm(calories ~ ., data = star_train_tr %>% select(-1))
+mod <- lm(calories ~ ., data = star_train_tr %>% select(-(1:2)))
 
-pred_lm <- predict(mod, star_train_te %>% select(-1))
+pred_lm <- predict(mod, star_train_te %>% select(-(1:2)))
 
 rmse_vec(star_train_te$calories, pred_lm)
 
@@ -227,7 +222,8 @@ cbind(star_train_te$calories, pred_lm) %>%
   as.data.frame() %>%
   'colnames<-'(c('calories','pred_lm')) %>% 
   ggplot(aes(sample = pred_lm))+
-  stat_qq() + stat_qq_line()
+  stat_qq(color= 'Red', size=0.9) + stat_qq_line(color="Darkblue")+
+  theme_light()
 
 ```
 
@@ -250,13 +246,13 @@ Only then we will see the result by cafe_test prediction's RMS
 dolche_de_leche<- function(df)
   {
   recipe(data=  df,calories~.) %>% 
-  update_role(product_name, new_role = "id") %>% ## ADD THIS
-  step_novel  (all_nominal(), -has_role('id'), -all_outcomes(), new_level = "the_rest")%>% 
-  step_unknown(all_nominal(), -has_role('id'), new_level= "step_unknown" )%>%
-  step_other  (all_nominal(), -has_role('id'), other = 'step_other', threshold = 0.004)%>% 
-  step_normalize(all_numeric( ), -has_role('id'),-has_role("discard"),-has_role("discard"),-all_outcomes()) %>%
-  step_nzv (all_numeric() , -has_role('id'),-has_role("discard") ,-all_outcomes(),freq_cut = 99/1) %>% 
-  step_dummy (all_nominal(), -has_role('id'), one_hot = F)
+  update_role   (ID, product_name, new_role = "id") %>% ## ADD THIS
+  step_novel    (all_nominal(), -has_role('id'),-all_outcomes(), new_level = "the_rest")%>% 
+  step_unknown  (all_nominal(), -has_role('id'), new_level= "step_unknown" )%>%
+  step_other    (all_nominal(), -has_role('id'), other = 'step_other', threshold = 0.004)%>% 
+  step_normalize(all_numeric(), -has_role('id'),-all_outcomes()) %>%
+  step_nzv      (all_numeric(), -has_role('id'),-all_outcomes(),freq_cut = 99/1) %>% 
+  step_dummy    (all_nominal(), -has_role('id'), one_hot = F)
   }
 
 bake_em_coffe<-  star_train_tr %>%dolche_de_leche()
@@ -273,8 +269,6 @@ cv_splits_star_train$bake_em_coffe <- map(
 
 data_full<-      dolche_de_leche(cafe_train) %>% prep(cafe_train) %>% bake(new_data= cafe_train)
 data_full_test<- dolche_de_leche(cafe_train) %>% prep(cafe_train) %>% bake(new_data= cafe_test)
-
-
 ```
 
 ### tune glmnet
@@ -351,20 +345,19 @@ mod_glmnet_final %>%
   predict(new_data = data_full_test)
 
 mod_glmnet_final %>% 
-  predict(new_data = data_full_test) %>%   cbind(cafe_test$product_name) %>%
-   rename(calories.pred= 1)# %>% write_csv("true_model_glmnet_3fixe_pred_Yoni.csv")
+  predict(new_data = data_full_test) %>%   cbind(cafe_test$product_name,cafe_test$ID) %>%
+   rename(calories.pred= 1,
+          product_name= 2)# %>% write_csv("true_model_glmnet_3fixe_pred_Yoni.csv")
 
 ```
 
 #### random forest
 
 ```{r random forest}
-
 YG_model_2 <- rand_forest(mode = "regression",
                            mtry = tune(), min_n = tune(),
                           trees = 100) %>%
   set_engine("ranger")
-
 
 rf_grid <- grid_regular(mtry(range(4, 23)), min_n(range(5,30)), levels = c(4, 3))
 
@@ -389,7 +382,6 @@ mod_rf_final <- finalize_model(YG_model_2, best_rmse)
 
 ##try to bake at last
 #____#
-#???
 
 #test_baked<- dolche_de_leche(data_full) %>% prep(data_full) %>% bake(data_full_test) 
 
@@ -405,15 +397,11 @@ YG_model_2_tuned<- YG_model_2 <- rand_forest(mode = "regression",
                            mtry = best_rmse$mtry, min_n = best_rmse$min_n,
                           trees = 1000) %>%
   set_engine("ranger")
-
-
+##???
 YG_model_2_tuned_fit<-
-  YG_model_2_tuned %>%  fit_xy(x = bake_em_coffe$template[,-c(1,25)],
+  YG_model_2_tuned %>%  fit_xy(x = bake_em_coffe$template[,-c(26)],
                              y= bake_em_coffe$template$calories) 
 YG_model_2_tuned_pred<- YG_model_2_tuned_fit %>% predict(new_data = test_baked$template)
-
-#YG_model_2_tuned_pred<- YG_model_2_tuned_fit %>% predict(new_data = data_full_test)
-
 
 YG_model_2_tuned_pred<- cbind(YG_model_2_tuned_pred,test_baked$template$calories)
 colnames(YG_model_2_tuned_pred)<- c('pred','true_calories')
@@ -425,15 +413,14 @@ rmse_vec(YG_model_2_tuned_pred$pred,YG_model_2_tuned_pred$true_calories)
 dim(YG_model_2_tuned_pred)
 dim(test_baked$template)
 
-
 ```
 
 #### preduction of random forest
 
 ```{r rf full to send}
 
-rf_full<-      dolche_de_leche(shoes_train_YG) %>% prep(shoes_train_YG) %>% bake(new_data= shoes_train_YG)
-rf_full_test<- dolche_de_leche(shoes_train_YG) %>% prep(shoes_train_YG) %>% bake(new_data= shoes_test_YG)
+#rf_full<-      dolche_de_leche(shoes_train_YG) %>% prep(shoes_train_YG) %>% bake(new_data= shoes_train_YG)
+#rf_full_test<- dolche_de_leche(shoes_train_YG) %>% prep(shoes_train_YG) %>% bake(new_data= shoes_test_YG)
 
 true_model_rf <- rand_forest(mode = "regression",
                            mtry = best_rmse$mtry, min_n = best_rmse$min_n,
@@ -468,9 +455,8 @@ try_full_short<- mod_rf_final %>%
 
 try_full_short %>% 
 predict(new_data = star_train_te) %>%
-  mutate(truth = star_train_te$calories)# %>%
-  head(10)
-
+  mutate(truth = star_train_te$calories,
+         ID= star_train_te$ID)# %>% head(10)
 ```
 
 ### Hash models
@@ -482,7 +468,7 @@ Now I will add hash to the recipe and try again
 dolche_de_leche_hash<- function(df)
   {
   recipe(data=  df,calories~.) %>% 
-  update_role(product_name, new_role = "id") %>% ## ADD THIS
+  update_role(ID, product_name, new_role = "id") %>% ## ADD THIS
   textrecipes::step_tokenize(product_name) %>%                                      #added hash
   textrecipes::step_texthash(product_name, signed = TRUE, num_terms = 12) %>%       #added hash
   step_rm(product_name) %>% 
